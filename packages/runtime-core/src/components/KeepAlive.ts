@@ -49,6 +49,7 @@ export interface KeepAliveProps {
   include?: MatchPattern
   exclude?: MatchPattern
   max?: number | string
+  matchBy?: string
 }
 
 type CacheKey = string | number | symbol | ConcreteComponent
@@ -81,7 +82,8 @@ const KeepAliveImpl: ComponentOptions = {
   props: {
     include: [String, RegExp, Array],
     exclude: [String, RegExp, Array],
-    max: [String, Number]
+    max: [String, Number],
+    matchBy: [String],
   },
 
   setup(props: KeepAliveProps, { slots }: SetupContext) {
@@ -92,6 +94,8 @@ const KeepAliveImpl: ComponentOptions = {
     // The whole point of this is to avoid importing KeepAlive directly in the
     // renderer to facilitate tree-shaking.
     const sharedContext = instance.ctx as KeepAliveContext
+
+    warn('Using custom build.')
 
     // if the internal renderer is not registered, it indicates that this is server-side rendering,
     // for KeepAlive, we just need to render its children
@@ -179,7 +183,10 @@ const KeepAliveImpl: ComponentOptions = {
 
     function pruneCache(filter?: (name: string) => boolean) {
       cache.forEach((vnode, key) => {
-        const name = getComponentName(vnode.type as ConcreteComponent)
+        const name = (props.matchBy && props.matchBy === 'key')
+          ? key ? key.toString() : undefined
+          : getComponentName(vnode.type as ConcreteComponent)
+        //const name = getComponentName(vnode.type as ConcreteComponent)
         if (name && (!filter || !filter(name))) {
           pruneCacheEntry(key)
         }
@@ -188,7 +195,7 @@ const KeepAliveImpl: ComponentOptions = {
 
     function pruneCacheEntry(key: CacheKey) {
       const cached = cache.get(key) as VNode
-      if (!current || cached.type !== current.type) {
+      if (!current || cached.type !== current.type || props.matchBy === 'key') {
         unmount(cached)
       } else if (current) {
         // current active instance should no longer be kept-alive.
@@ -264,13 +271,15 @@ const KeepAliveImpl: ComponentOptions = {
       let vnode = getInnerChild(rawVNode)
       const comp = vnode.type as ConcreteComponent
 
-      // for async components, name check should be based in its loaded
-      // inner component if available
-      const name = getComponentName(
-        isAsyncWrapper(vnode)
-          ? (vnode.type as ComponentOptions).__asyncResolved || {}
-          : comp
-      )
+      const name = (props.matchBy && props.matchBy === 'key')
+          ? vnode.key ? vnode.key.toString() : undefined
+            // for async components, name check should be based in its loaded
+            // inner component if available
+          : getComponentName(
+            isAsyncWrapper(vnode)
+              ? (vnode.type as ComponentOptions).__asyncResolved || {}
+              : comp
+          )
 
       const { include, exclude, max } = props
 
